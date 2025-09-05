@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Hanuman Chalisa — Simple Audio Player & PDFs</title>
+<style>
+  /* Minimal site styles */
+  body { font-family: Arial, Helvetica, sans-serif; background:#f5f6f8; color:#111; margin:0; padding:16px; }
+  .container { max-width:920px; margin:0 auto; }
+  header { margin-bottom:12px; }
+  h1 { font-size:20px; margin:0 0 6px; }
+  p.small { margin:0; color:#555; font-size:13px; }
+
+  .tabs { display:flex; gap:8px; margin:14px 0; }
+  .tab { padding:8px 12px; background:#fff; border:1px solid #ddd; border-radius:6px; cursor:pointer; user-select:none;}
+  .tab.active { background:#efefef; border-color:#ccc; }
+
+  .panel { background:#fff; border:1px solid #e6e6e6; padding:12px; border-radius:8px; }
+  .list { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+  .item { display:flex; gap:10px; align-items:center; border:1px solid #eee; padding:8px; border-radius:6px; background:#fff; }
+  .item .meta { flex:1; min-width:0; }
+  .item .title { font-weight:600; font-size:14px; }
+  .item .sub { color:#666; font-size:12px; margin-top:3px; }
+
+  button.btn { padding:6px 10px; border-radius:6px; border:1px solid #cfcfcf; background:#fafafa; cursor:pointer; }
+  button.btn[disabled]{ opacity:.6; cursor:not-allowed }
+  a.link { color:#0066cc; text-decoration:none; font-size:13px; }
+
+  .controls { display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap; }
+  .progress { flex:1; min-width:160px; }
+  input[type=range] { width:100%; }
+
+  .small { font-size:13px; color:#666; }
+
+  footer { margin-top:16px; font-size:13px; color:#444; text-align:center; padding:6px 0; }
+
+  /* Blocking popup overlay */
+  .overlay {
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background: rgba(2,6,23,0.55);
+    z-index:9999;
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  }
+  .modal-card {
+    width:92%; max-width:720px; background:#fff; border-radius:12px; overflow:hidden;
+    box-shadow: 0 10px 40px rgba(2,6,23,0.45); animation: pop .28s ease;
+  }
+  @keyframes pop { from { transform: translateY(6px) scale(.99); opacity:0 } to { transform:none; opacity:1 } }
+
+  .modal-head { padding:14px; background: #072036; color:#fff; display:flex;align-items:center;gap:12px; }
+  .modal-head h2 { margin:0;font-size:18px; }
+  .modal-body { padding:18px; color:#111; background:#fff; line-height:1.5; font-size:14px; }
+  .modal-body p { margin:10px 0; color:#222 }
+  .modal-body .important { font-weight:700; color:#b02a2a }
+  .modal-foot { padding:14px 18px; display:flex; justify-content:flex-end; gap:10px; background:#fafafa; border-top:1px solid #eee; }
+  .btn-continue { padding:8px 14px; border-radius:8px; border:0; background:#0b6b6b; color:#fff; cursor:pointer; }
+  .btn-close { padding:8px 12px; border-radius:8px; border:0; background:#555; color:#fff; cursor:pointer; }
+  .countdown { font-weight:700; color:#0b6b6b; margin-left:8px; }
+
+  body.modal-open { overflow:hidden; touch-action:none; }
+</style>
+</head>
+<body>
+  <div class="container" id="mainContent" aria-hidden="false">
+    <header>
+      <h1>Hanuman Chalisa — Simple Audio Player & PDFs</h1>
+      <p class="small">Functional and minimal. Play MP3s, preview PDFs, download or copy links.</p>
+    </header>
+
+    <div class="tabs">
+      <div id="tabAudio" class="tab active">Audio (MP3)</div>
+      <div id="tabPdf" class="tab">PDFs</div>
+    </div>
+
+    <!-- Audio panel -->
+    <div id="panelAudio" class="panel">
+      <div class="small">Click a track to load and play. Use controls to navigate.</div>
+      <div id="playlist" class="list" aria-live="polite"></div>
+
+      <div class="controls">
+        <button id="prev" class="btn">⏮ Prev</button>
+        <button id="play" class="btn">▶ Play</button>
+        <button id="next" class="btn">Next ⏭</button>
+
+        <div class="progress" style="display:flex;flex-direction:column;gap:6px;">
+          <input id="seek" type="range" min="0" max="100" value="0">
+          <div style="display:flex;justify-content:space-between;font-size:13px;color:#444">
+            <span id="curTime">00:00</span>
+            <span id="durTime">00:00</span>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;align-items:center;">
+          <label class="small">Vol</label>
+          <input id="vol" type="range" min="0" max="1" step="0.01" value="1" style="width:120px;">
+        </div>
+      </div>
+    </div>
+
+    <!-- PDF panel -->
+    <div id="panelPdf" class="panel" style="display:none; margin-top:12px;">
+      <div class="small">Preview PDFs in a popup or open in a new tab. Use Copy to copy the link.</div>
+      <div id="pdfList" class="list"></div>
+    </div>
+
+    <footer>
+      &copy; <a href="https://SriHanumanChalisa.org" target="_blank" style="color:#0066cc;text-decoration:none;">SriHanumanChalisa.Org</a>
+    </footer>
+  </div>
+
+  <!-- Startup overlay (blocking) -->
+  <div id="startupOverlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="startupTitle" aria-describedby="startupDesc">
+    <div class="modal-card" role="document" aria-live="polite">
+      <div class="modal-head">
+        <h2 id="startupTitle">Important — Copyright & Usage Notice</h2>
+      </div>
+      <div class="modal-body">
+        <p id="startupDesc">
+          All audio and PDF material on this page is protected by copyright. You may use this material only with explicit permission from the copyright owner.
+        </p>
+        <p class="important">
+          If you use any of this material on your site, you MUST credit and link back to
+          <a href="https://SriHanumanChalisa.org" target="_blank" style="color:#0b6b6b;">SriHanumanChalisa.org</a>.
+        </p>
+        <p>
+          Failure to provide proper credit or unauthorized use may result in a DMCA takedown request. Please respect copyright and request permission before reuse.
+        </p>
+        <p style="margin-top:10px;color:#333">
+          You must wait <span id="countdown" class="countdown">15</span> seconds. The page will automatically open when the countdown finishes.
+        </p>
+      </div>
+      <div class="modal-foot">
+        <button id="continueBtn" class="btn-continue" disabled aria-disabled="true">Continue (<span id="countdownBtn">15</span>s)</button>
+        <button id="closeBtn" class="btn-close" disabled aria-disabled="true">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PDF preview modal (non-blocking) -->
+  <div id="pdfModal" class="overlay" style="display:none" role="dialog" aria-hidden="true">
+    <div class="modal-card" style="max-width:900px">
+      <div class="modal-head" style="background:#083243">
+        <h2 id="pdfModalTitle">PDF Preview</h2>
+      </div>
+      <div style="height:75vh; background:#fff">
+        <iframe id="pdfFrame" style="width:100%;height:100%;border:0"></iframe>
+      </div>
+      <div class="modal-foot">
+        <button id="pdfOpen" class="btn">Open in new tab</button>
+        <button id="pdfClose" class="btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ====== URLs provided by you ====== */
+const mp3Urls = [
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/mp3/hanuman-chalisa-hari-om-sharan.mp3",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/mp3/hanuman-chalisa-hariharan-gulshan-kumar.mp3",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/mp3/hanuman-chalisa-meaning-hindi.mp3",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/mp3/hanuman-chalisa-ms-subbulakshmi.mp3",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/mp3/hanuman-chalisa-ringtone-download.mp3",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/mp3/shree-hanuman-chalisa-karaoke-music.mp3",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/mp3/shree-hanuman-chalisa-rasraj-ji-maharaj.mp3",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/mp3/shree-hanuman-chalisa-shreya-ghoshal.mp3",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/mp3/hanuman-chalisa-fast-superfast.mp3"
+];
+
+const pdfUrls = [
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/pdf/hanuman-chalisa-assamese.pdf",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/pdf/hanuman-chalisa-bengali.pdf",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/pdf/hanuman-chalisa-english.pdf",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/pdf/hanuman-chalisa-gujarati.pdf",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/pdf/hanuman-chalisa-kannada.pdf",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/pdf/hanuman-chalisa-malayalam.pdf",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/pdf/hanuman-chalisa-marathi.pdf",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/pdf/hanuman-chalisa-odia.pdf",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/pdf/hanuman-chalisa-punjabi.pdf",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/pdf/hanuman-chalisa-tamil.pdf",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/pdf/hanuman-chalisa-telugu.pdf",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/pdf/hanuman-chalisa.pdf",
+  "https://shreehanumanchalisaa.github.io/hanumanchalisa/pdf/hanuman-ji-ki-aarti.pdf"
+];
+
+/* ====== Helpers ====== */
+function niceName(url){
+  const file = url.split('/').pop();
+  return decodeURIComponent(file).replace(/\.[^/.]+$/, '').replace(/[-_]+/g, ' ').replace(/\s+/g,' ').trim();
+}
+function formatTime(t){
+  if(!t || isNaN(t)) return '00:00';
+  const m = Math.floor(t/60), s = Math.floor(t%60);
+  return String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+}
+function copyText(text){
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(text).then(()=> alert('Link copied'));
+  } else {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove(); alert('Link copied');
+  }
+}
+
+/* ====== Build UI lists ====== */
+const playlistEl = document.getElementById('playlist');
+mp3Urls.forEach((url, idx) => {
+  const el = document.createElement('div');
+  el.className = 'item';
+  el.innerHTML = `
+    <div class="meta">
+      <div class="title">${niceName(url)}</div>
+      <div class="sub">${url.split('/').slice(-2).join('/')}</div>
+    </div>
+    <button class="btn" data-play="${idx}">Play</button>
+    <a class="link" href="${url}" download style="margin-left:8px">Download</a>
+    <button class="btn" data-copy="${url}" style="margin-left:8px">Copy</button>
+  `;
+  playlistEl.appendChild(el);
+});
+
+const pdfListEl = document.getElementById('pdfList');
+pdfUrls.forEach(url => {
+  const el = document.createElement('div');
+  el.className = 'item';
+  el.innerHTML = `
+    <div class="meta">
+      <div class="title">${niceName(url)}</div>
+      <div class="sub">${url.split('/').slice(-2).join('/')}</div>
+    </div>
+    <button class="btn" data-preview="${url}">Preview</button>
+    <a class="link" href="${url}" target="_blank" style="margin-left:8px">Open</a>
+    <button class="btn" data-copy="${url}" style="margin-left:8px">Copy</button>
+  `;
+  pdfListEl.appendChild(el);
+});
+
+/* ====== Audio player logic ====== */
+const audio = new Audio();
+audio.crossOrigin = "anonymous";
+let current = -1;
+const playBtn = document.getElementById('play');
+const prevBtn = document.getElementById('prev');
+const nextBtn = document.getElementById('next');
+const seek = document.getElementById('seek');
+const curTime = document.getElementById('curTime');
+const durTime = document.getElementById('durTime');
+const vol = document.getElementById('vol');
+
+function loadTrack(i){
+  if(i<0 || i>=mp3Urls.length) return;
+  current = i;
+  audio.src = mp3Urls[i];
+  audio.load();
+  play();
+  highlight();
+}
+function play(){
+  audio.play().catch(()=>{}); playBtn.textContent = '⏸ Pause';
+}
+function pause(){
+  audio.pause(); playBtn.textContent = '▶ Play';
+}
+playBtn.addEventListener('click', ()=>{
+  if(audio.paused) play(); else pause();
+});
+prevBtn.addEventListener('click', ()=> {
+  if(current > 0) loadTrack(current - 1);
+});
+nextBtn.addEventListener('click', ()=> {
+  if(current < mp3Urls.length - 1) loadTrack(current + 1);
+});
+
+/* playlist clicks */
+playlistEl.addEventListener('click', (e)=>{
+  const p = e.target.getAttribute('data-play');
+  const c = e.target.getAttribute('data-copy');
+  if(p !== null) loadTrack(Number(p));
+  else if(c) copyText(c);
+});
+
+/* pdf list click */
+pdfListEl.addEventListener('click', (e)=>{
+  const preview = e.target.getAttribute('data-preview');
+  const copy = e.target.getAttribute('data-copy');
+  if(preview) openPdfModal(preview);
+  else if(copy) copyText(copy);
+});
+
+/* time updates, seek, volume */
+audio.addEventListener('timeupdate', ()=>{
+  if(audio.duration){
+    seek.value = (audio.currentTime / audio.duration) * 100;
+    curTime.textContent = formatTime(audio.currentTime);
+    durTime.textContent = formatTime(audio.duration);
+  }
+});
+seek.addEventListener('input', ()=>{
+  if(audio.duration) audio.currentTime = (seek.value/100) * audio.duration;
+});
+audio.addEventListener('ended', ()=>{
+  if(current < mp3Urls.length -1) loadTrack(current+1); else { pause(); audio.currentTime = 0; }
+});
+vol.addEventListener('input', ()=> audio.volume = vol.value);
+
+/* highlight playing item */
+function highlight(){
+  Array.from(playlistEl.children).forEach((el, idx) => {
+    el.style.background = (idx === current) ? '#f0f8ff' : '#fff';
+  });
+}
+
+/* ====== PDF preview modal logic ====== */
+const pdfModal = document.getElementById('pdfModal');
+const pdfFrame = document.getElementById('pdfFrame');
+const pdfModalTitle = document.getElementById('pdfModalTitle');
+const pdfClose = document.getElementById('pdfClose');
+const pdfOpen = document.getElementById('pdfOpen');
+
+function openPdfModal(url){
+  pdfFrame.src = url;
+  pdfModalTitle.textContent = niceName(url);
+  pdfOpen.onclick = ()=> window.open(url, '_blank');
+  pdfModal.style.display = 'flex';
+  pdfModal.setAttribute('aria-hidden','false');
+}
+pdfClose.addEventListener('click', ()=> {
+  pdfModal.style.display = 'none';
+  pdfFrame.src = '';
+  pdfModal.setAttribute('aria-hidden','true');
+});
+pdfModal.addEventListener('click', (e)=> { if(e.target === pdfModal) { pdfModal.style.display = 'none'; pdfFrame.src = ''; pdfModal.setAttribute('aria-hidden','true'); } });
+
+/* ====== Startup overlay (15s countdown + auto-close) ====== */
+const overlay = document.getElementById('startupOverlay');
+const continueBtn = document.getElementById('continueBtn');
+const closeBtn = document.getElementById('closeBtn');
+const countdownEl = document.getElementById('countdown');
+const countdownBtnEl = document.getElementById('countdownBtn');
+
+let waitSeconds = 15;
+document.body.classList.add('modal-open');
+overlay.style.display = 'flex';
+document.getElementById('mainContent').setAttribute('aria-hidden','true');
+
+// Block some keys while overlay visible
+function keyBlocker(e){
+  if(document.body.classList.contains('modal-open')) {
+    // block Space/Escape from doing anything until overlay hidden
+    if(e.key === ' ' || e.key === 'Spacebar' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return false; }
+  }
+}
+document.addEventListener('keydown', keyBlocker, true);
+
+// countdown timer
+const timer = setInterval(()=>{
+  waitSeconds--;
+  countdownEl.textContent = String(waitSeconds);
+  countdownBtnEl.textContent = String(waitSeconds);
+  if(waitSeconds <= 0){
+    clearInterval(timer);
+    finishOverlay(); // auto close when reaches 0
+  }
+}, 1000);
+
+// enable buttons (so user can click after countdown), and auto-close
+function finishOverlay(){
+  // enable buttons
+  continueBtn.disabled = false;
+  continueBtn.classList.remove('btn-continue');
+  continueBtn.classList.add('btn-continue'); // maintain look (already styled)
+  continueBtn.textContent = 'Continue';
+  continueBtn.removeAttribute('aria-disabled');
+
+  closeBtn.disabled = false;
+  closeBtn.removeAttribute('aria-disabled');
+
+  // remove keyboard blocking
+  document.removeEventListener('keydown', keyBlocker, true);
+
+  // auto-close overlay after a short delay (so user sees 'Continue' briefly), here auto-close immediately:
+  closeOverlay(); // auto-close now
+}
+
+// clicking continue or close also closes overlay (but both are disabled until countdown ends)
+continueBtn.addEventListener('click', closeOverlay);
+closeBtn.addEventListener('click', closeOverlay);
+
+function closeOverlay(){
+  overlay.style.display = 'none';
+  document.body.classList.remove('modal-open');
+  document.getElementById('mainContent').setAttribute('aria-hidden','false');
+}
+
+/* prevent overlay clicks from closing early */
+overlay.addEventListener('click', (e)=>{
+  e.stopPropagation();
+  e.preventDefault();
+}, true);
+
+/* ====== keyboard shortcuts for player (only active once overlay closed) ====== */
+document.addEventListener('keydown', (e)=>{
+  if(document.body.classList.contains('modal-open')) return; // blocked
+  if(e.key === ' ' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){
+    e.preventDefault();
+    if(audio.paused) play(); else pause();
+  }
+  if(e.key === 'ArrowRight') { if(current < mp3Urls.length -1) loadTrack(current+1); }
+  if(e.key === 'ArrowLeft') { if(current > 0) loadTrack(current-1); }
+});
+
+/* ====== Tab switching ====== */
+document.getElementById('tabAudio').addEventListener('click', ()=>{
+  document.getElementById('panelAudio').style.display = ''; 
+  document.getElementById('panelPdf').style.display = 'none';
+  document.getElementById('tabAudio').classList.add('active');
+  document.getElementById('tabPdf').classList.remove('active');
+});
+document.getElementById('tabPdf').addEventListener('click', ()=>{
+  document.getElementById('panelAudio').style.display = 'none';
+  document.getElementById('panelPdf').style.display = '';
+  document.getElementById('tabPdf').classList.add('active');
+  document.getElementById('tabAudio').classList.remove('active');
+});
+
+/* ====== initial setup: load first track (no autoplay) ====== */
+if(mp3Urls.length){
+  current = 0;
+  audio.src = mp3Urls[0];
+  highlight();
+}
+</script>
+</body>
+</html>
